@@ -219,12 +219,12 @@ size(Atilde2) % 16 x 16
 
 %% Design integral action controller
 % from the results above, it's clear that the system is only controllable
-% if we add integrators on the (p_n, p_e, p_d, yaw) state variables...
+% if we add integrators just on the (p_n, p_e, p_d, yaw) state variables...
 Qtilde2 = eye(16, 16); Rtilde2 = eye(4,4);
 Ktilde2 = lqr(Atilde2, Btilde2, Qtilde2, Rtilde2);
 
 % 1:12 because that's the # of state vars; 13:16 b/c 13 = 12 + 1, 16 = 12
-% + 4 and 4 is # of control inputs
+% + 4 and 4 is # of virtual integrator signals for (p_n, p_e, p_d, yaw)
 Ktilde2_1 = Ktilde2(:,1:12); Ktilde2_2 = Ktilde2(:,13:16); 
 
 % Observer 'H' gain
@@ -239,7 +239,7 @@ H = lqr(A_realized', C', Q, R)';
 
 %% Simulate full controller...
 T = 0:0.01:25;
-num_references = 4; % this is because (p_n, p_e, p_d, yaw); also just size(C2,1)
+num_references = size(C2, 1); % this is because (p_n, p_e, p_d, yaw)
 
 Acl = [
     A_realized-B_realized*Ktilde2_1 -B_realized*Ktilde2_2 B_realized*Ktilde2_1; 
@@ -258,7 +258,7 @@ cls = ss(Acl, Bcl, Ccl, Dcl);
 % psi variables. the final argument to the function 'lsim' are the state
 % initial conditions!
 y_pn = lsim(cls, [ones(length(T), 1) zeros(length(T), 3)], T, zeros(28,1));
-plot(T, y_pn); grid on;
+plot(T, y_pn, 'LineWidth', 2); legend('p_n', 'p_e', 'p_d', '\phi', '\theta', '\psi', 'p', 'q', 'r'); grid on; title('Response to Step Reference for p_n'); xlabel('Time [s]');
 
 y_pe = lsim(cls, [zeros(length(T), 1) ones(length(T), 1) zeros(length(T), 2)], T, zeros(28,1));
 plot(T, y_pe); grid on;
@@ -311,7 +311,7 @@ sigma(minreal(eye(4,4) + L_i), [], 1); grid on; % humps in sensitivity function 
 %% Plot the Bode / Sigma plot of the Input  complementary sensitivity function
 T_i = minreal(L_i * S_i); % input complementary sensitivity function -> multiplication of states -> numerical inaccuracies
 bode(T_i); grid on;
-sigma(T_i); grid on; % numerical inaccuracies (inverses of high-degree rational functions! Lots of room for numerical sensitivity)
+sigma(T_i); grid on;
 
 %% Input Disk margin (quantification of robustness)
 [dmi, mmi] = diskmargin(L_i);
@@ -349,12 +349,11 @@ bode(L_o); grid on;
 %% Plot the Bode / Sigma plot of the Output sensitivity function
 S_o = minreal(inv(minreal(eye(9,9) + L_o))); % output sensitivity function
 bode(S_o); grid on;
-sigma(S_o); grid on; % from this, it's clear that there are performance limitations...
-
+s
 %% Plot the Bode / Sigma plot of the Output complementary sensitivity function
 T_o = minreal(L_o * S_o); % output complementary sensitivity function
 bode(T_o); grid on;
-sigma(T_o); grid on; % looks bad (probably inaccurate numerically)
+sigma(T_o); grid on;
 
 %% Output Disk margin (quantification of robustness)
 [dmo, mmo] = diskmargin(L_o);
