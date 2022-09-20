@@ -172,7 +172,6 @@ observability = rank(Mob) % observability is 12, so fully observable
 Mob2 = [C2; C2*A; C2*A^2; C2*A^3; C2*A^4; C2*A^5; C2*A^6; C2*A^7; C2*A^8; C2*A^9; C2*A^10; C2*A^11; C2*A^12];
 observability2 = rank(Mob2) % observability is 12, so fully observable
 
-
 %% Poles and Zeros of the Linear Open-Loop System
 psi_eval = 0;
 A_realized = double(simplify(subs(A, [M m R L l R k1 k2 g psi], [1 1 1 1 1 1 1 1 9.81 psi_eval])));
@@ -183,8 +182,7 @@ sys_zeros = tzero(sys_realized); % no open-loop zeros
 sys_poles = pole(sys_realized); % all poles are unstable
 
 %% Define performance specifications (to be modified later)
-PM_desired = 60; % [deg] desired phase margin
-GM_desired = inf; % [dB] desired gain margin
+% phase margin specs? gain margin specs?
 
 %% Controller Design
 % We will use observer-based state-feedback controller with integral action
@@ -240,7 +238,7 @@ H = lqr(A_realized', C', Q, R)';
 % the integral virtual signals for the (pn,pe,pd,yaw) signals...
 
 %% Simulate full controller...
-T = 0:0.01:40;
+T = 0:0.01:25;
 num_references = 4; % this is because (p_n, p_e, p_d, yaw); also just size(C2,1)
 
 Acl = [
@@ -260,56 +258,103 @@ cls = ss(Acl, Bcl, Ccl, Dcl);
 % psi variables. the final argument to the function 'lsim' are the state
 % initial conditions!
 y_pn = lsim(cls, [ones(length(T), 1) zeros(length(T), 3)], T, zeros(28,1));
-plot(T, y_pn);
+plot(T, y_pn); grid on;
 
 y_pe = lsim(cls, [zeros(length(T), 1) ones(length(T), 1) zeros(length(T), 2)], T, zeros(28,1));
-plot(T, y_pe);
+plot(T, y_pe); grid on;
 
 y_pd = lsim(cls, [zeros(length(T), 2) ones(length(T), 1) zeros(length(T), 1)], T, zeros(28,1));
-plot(T, y_pd);
+plot(T, y_pd); grid on;
 
 y_psi = lsim(cls, [zeros(length(T), 3) ones(length(T), 1)], T, zeros(28,1));
-plot(T, y_psi);
+plot(T, y_psi); grid on;
 
 %% Perform another set of simulations, but this time with error != 0
 % make the initial condition of the estimated state != actual state...
 y_pn = lsim(cls, [ones(length(T), 1) zeros(length(T), 3)], T, [zeros(28-12,1); 0.1*ones(28-12-4,1)]);
-plot(T, y_pn);
+plot(T, y_pn); grid on;
 
 y_pe = lsim(cls, [zeros(length(T), 1) ones(length(T), 1) zeros(length(T), 2)], T, [zeros(28-12,1); 0.1*ones(28-12-4,1)]);
-plot(T, y_pe);
+plot(T, y_pe); grid on;
 
 y_pd = lsim(cls, [zeros(length(T), 2) ones(length(T), 1) zeros(length(T), 1)], T, [zeros(28-12,1); 0.1*ones(28-12-4,1)]);
-plot(T, y_pd);
+plot(T, y_pd); grid on;
 
 y_psi = lsim(cls, [zeros(length(T), 3) ones(length(T), 1)], T, [zeros(28-12,1); 0.1*ones(28-12-4,1)]);
 plot(T, y_psi);
 
-%% Determine the Effective Loop Gain (L) (i.e. the open-loop gain)
+%% Determine the Input Effective Loop Gain (L_i) (i.e. the open-loop gain)
 K1 = Ktilde2_1;
 K2 = Ktilde2_2;
-A_L = [
+A_Li = [
     A_realized zeros(size(A_realized, 1), size(-B*K2, 2)) zeros(size(A_realized, 1), size(A_realized - B * K1 - H * C, 2));
     C2 zeros(size(C2, 1), size(-B_realized*K2, 2)) zeros(size(C2, 1), size(A_realized - B * K1 - H * C, 2));
     H * C -B_realized * K2 A_realized - B_realized * K1 - H * C
 ];
 
-B_L = [B_realized; zeros(size(C2, 1), size(B, 2)); zeros(size(A, 1), size(B, 2))];
-C_L = [zeros(size(K2, 1), size(A_realized, 2)) K2 K1];
-D_L = zeros(size(C_L, 1), size(B_L, 2));
+B_Li = [B_realized; zeros(size(C2, 1), size(B, 2)); zeros(size(A, 1), size(B, 2))];
+C_Li = [zeros(size(K2, 1), size(A_realized, 2)) K2 K1];
+D_Li = zeros(size(C_Li, 1), size(B_Li, 2));
 
-L = ss(A_L, B_L, C_L, D_L);
+L_i = minreal(ss(A_Li, B_Li, C_Li, D_Li)); % input effective Loop gain
 
-%% Plot the Bode / Sigma plot of the effective loop gain
-sigma(L); grid on;
-bode(L); grid on;
+%% Plot the Bode / Sigma plot of the Input effective loop gain
+sigma(L_i); grid on;
+bode(L_i); grid on;
 
-%% Plot the Bode / Sigma plot of the output sensitivity function
-S_o = inv(eye(4,4) + L); % output sensitivity function
+%% Plot the Bode / Sigma plot of the Input sensitivity function
+S_i = minreal(inv(minreal(eye(4,4) + L_i))); % input sensitivity function
+bode(S_i); grid on;
+w = logspace(-2, 4, 1e4); sigma(S_i, w); grid on; % 1 way of plotting this...
+sigma(minreal(eye(4,4) + L_i), [], 1); grid on; % humps in sensitivity function represent frequency regions of bad tracking/disturbance rejection performance
+
+%% Plot the Bode / Sigma plot of the Input  complementary sensitivity function
+T_i = minreal(L_i * S_i); % input complementary sensitivity function -> multiplication of states -> numerical inaccuracies
+bode(T_i); grid on;
+sigma(T_i); grid on; % numerical inaccuracies (inverses of high-degree rational functions! Lots of room for numerical sensitivity)
+
+%% Input Disk margin (quantification of robustness)
+[dmi, mmi] = diskmargin(L_i);
+
+%% Determine the Output Effective Loop Gain (L_o) (i.e. the open-loop gain)
+% A_Lo = [
+%     A_realized -B_realized*K2 -B_realized*K1;
+%     zeros(size(C2, 1), size(A,2)) zeros(size(C2, 1), size(-B*K2,2)) zeros(size(C2,1), size(-B*K1,2));
+%     zeros(size(-B_realized*K2, 1), size(A_realized, 2)) -B_realized*K2 A_realized - H*C - B_realized*K1
+% ];
+% B_Lo = [
+%     zeros(size(A_realized, 1), size(H, 2));
+%     -eye(4,9);
+%     -H
+% ];
+A_Lo = [
+    A_realized -B_realized*K2 -B_realized*K1;
+    zeros(size(C2, 1), size(A,2)) zeros(size(C2, 1), size(-B*K2,2)) zeros(size(C2,1), size(-B*K1,2));
+    H*C -B_realized*K2 A_realized - H*C - B_realized*K1
+];
+B_Lo = [
+    zeros(size(A_realized, 1), size(H, 2));
+    -eye(4,9);
+    zeros(size(H))
+];
+C_Lo = [C zeros(size(C, 1), 4) zeros(size(C, 1), 12)];
+D_Lo = zeros(size(C_Lo, 1), size(B_Lo, 2));
+
+L_o = minreal(ss(A_Lo, B_Lo, C_Lo, D_Lo));
+
+%% Plot the Bode / Sigma plot of the output effective loop gain
+sigma(L_o); grid on;
+bode(L_o); grid on;
+
+%% Plot the Bode / Sigma plot of the Output sensitivity function
+S_o = minreal(inv(minreal(eye(9,9) + L_o))); % output sensitivity function
 bode(S_o); grid on;
 sigma(S_o); grid on; % from this, it's clear that there are performance limitations...
 
-%% Plot the Bode / Sigma plot of the output complementary sensitivity function
-T_o = L * S_o; % output complementary sensitivity function
+%% Plot the Bode / Sigma plot of the Output complementary sensitivity function
+T_o = minreal(L_o * S_o); % output complementary sensitivity function
 bode(T_o); grid on;
-sigma(S_o); grid on; % looks bad (probably inaccurate numerically)
+sigma(T_o); grid on; % looks bad (probably inaccurate numerically)
+
+%% Output Disk margin (quantification of robustness)
+[dmo, mmo] = diskmargin(L_o);
