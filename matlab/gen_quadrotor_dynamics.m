@@ -174,6 +174,7 @@ observability2 = rank(Mob2) % observability is 12, so fully observable
 
 %% Poles and Zeros of the Linear Open-Loop System
 psi_eval = 0;
+% psi_eval = pi/2;
 A_realized = double(simplify(subs(A, [M m R L l R k1 k2 g psi], [1 1 1 1 1 1 1 1 9.81 psi_eval])));
 B_realized = double(simplify(subs(B, [M m R L l R k1 k2 g psi], [1 1 1 1 1 1 1 1 9.81 psi_eval])));
 assert(rank(ctrb(A_realized, B_realized)) == 12); % rank(ctrb) must be 12 for controllability
@@ -230,6 +231,7 @@ Ktilde2_1 = Ktilde2(:,1:12); Ktilde2_2 = Ktilde2(:,13:16);
 % Observer 'H' gain
 Q = eye(12,12); R = eye(9,9);
 H = lqr(A_realized', C', Q, R)';
+% H = place(A_realized', C', [-16, -16.1, -16.2, -16.3, -16.4, -16.5, -16.6, -16.7, -16.8, -16.9, -16.11, -16.12])';
 
 % Note: This controller design works because of the separation principle...
 % we use 'C' in devising the Luenburger observer 'H', but 'C2' in devising
@@ -250,6 +252,10 @@ Bcl = [zeros(size(A, 1), num_references); -eye(num_references, num_references); 
 Ccl = [C zeros(size(C, 1), num_references) zeros(size(C, 1), size(A, 1))];
 Dcl = zeros(size(Ccl, 1), size(Bcl, 2));
 cls = ss(Acl, Bcl, Ccl, Dcl);
+cls_poles = eig(cls);
+observer_poles = cls_poles(end-(size(H',2)-1):end); % -1 just cuz of MATLAB indexing
+system_poles = cls_poles(1:size(Ktilde2, 2));
+cls_zeros = tzero(cls);
 
 %% Simulate linear closed-loop system...
 % the output vector y_pn or y_pe or y_pd or y_psi from the function call to
@@ -269,6 +275,9 @@ plot(T, y_pd); grid on;
 y_psi = lsim(cls, [zeros(length(T), 3) ones(length(T), 1)], T, zeros(28,1));
 plot(T, y_psi); grid on;
 
+y_all = lsim(cls, [ones(length(T), 4)], T, zeros(28,1));
+plot(T, y_all); grid on;
+
 %% Perform another set of simulations, but this time with error != 0
 % make the initial condition of the estimated state != actual state...
 y_pn = lsim(cls, [ones(length(T), 1) zeros(length(T), 3)], T, [zeros(28-12,1); 0.1*ones(28-12-4,1)]);
@@ -281,7 +290,7 @@ y_pd = lsim(cls, [zeros(length(T), 2) ones(length(T), 1) zeros(length(T), 1)], T
 plot(T, y_pd); grid on;
 
 y_psi = lsim(cls, [zeros(length(T), 3) ones(length(T), 1)], T, [zeros(28-12,1); 0.1*ones(28-12-4,1)]);
-plot(T, y_psi);
+plot(T, y_psi); grid on;
 
 %% Determine the Input Effective Loop Gain (L_i) (i.e. the open-loop gain)
 K1 = Ktilde2_1;
@@ -299,61 +308,67 @@ D_Li = zeros(size(C_Li, 1), size(B_Li, 2));
 L_i = minreal(ss(A_Li, B_Li, C_Li, D_Li)); % input effective Loop gain
 
 %% Plot the Bode / Sigma plot of the Input effective loop gain
-sigma(L_i); grid on;
-bode(L_i); grid on;
+[s_Li, w_Li] = sigma(L_i); grid on;
+% bode(L_i); grid on;
 
 %% Plot the Bode / Sigma plot of the Input sensitivity function
 S_i = minreal(inv(minreal(eye(4,4) + L_i))); % input sensitivity function
-bode(S_i); grid on;
-w = logspace(-2, 4, 1e4); sigma(S_i, w); grid on; % 1 way of plotting this...
-sigma(minreal(eye(4,4) + L_i), [], 1); grid on; % humps in sensitivity function represent frequency regions of bad tracking/disturbance rejection performance
+% bode(S_i); grid on;
+[s_Si, w_Si] = sigma(minreal(eye(4,4) + L_i), [], 1); grid on; % humps in sensitivity function represent frequency regions of bad tracking/disturbance rejection performance
 
 %% Plot the Bode / Sigma plot of the Input  complementary sensitivity function
 T_i = minreal(L_i * S_i); % input complementary sensitivity function -> multiplication of states -> numerical inaccuracies
-bode(T_i); grid on;
-sigma(T_i); grid on;
+% bode(T_i); grid on;
+[s_Ti, w_Ti] = sigma(T_i); grid on;
 
 %% Input Disk margin (quantification of robustness)
 [dmi, mmi] = diskmargin(L_i);
 
 %% Determine the Output Effective Loop Gain (L_o) (i.e. the open-loop gain)
-% A_Lo = [
-%     A_realized -B_realized*K2 -B_realized*K1;
-%     zeros(size(C2, 1), size(A,2)) zeros(size(C2, 1), size(-B*K2,2)) zeros(size(C2,1), size(-B*K1,2));
-%     zeros(size(-B_realized*K2, 1), size(A_realized, 2)) -B_realized*K2 A_realized - H*C - B_realized*K1
-% ];
-% B_Lo = [
-%     zeros(size(A_realized, 1), size(H, 2));
-%     -eye(4,9);
-%     -H
-% ];
 A_Lo = [
     A_realized -B_realized*K2 -B_realized*K1;
     zeros(size(C2, 1), size(A,2)) zeros(size(C2, 1), size(-B*K2,2)) zeros(size(C2,1), size(-B*K1,2));
-    H*C -B_realized*K2 A_realized - H*C - B_realized*K1
+    zeros(size(-B_realized*K2, 1), size(A_realized, 2)) -B_realized*K2 A_realized - H*C - B_realized*K1
 ];
 B_Lo = [
     zeros(size(A_realized, 1), size(H, 2));
     -eye(4,9);
-    zeros(size(H))
+    -H
 ];
+
+% the selection below is the same as the one above, except we make some
+% unstable pole-zero cancellations in the one below... this causes some
+% singular values to get cancelled out so the plots are prettier, but the
+% singular value values are also -inf, so that's not good...
+% A_Lo = [ 
+%     A_realized -B_realized*K2 -B_realized*K1;
+%     zeros(size(C2, 1), size(A,2)) zeros(size(C2, 1), size(-B*K2,2)) zeros(size(C2,1), size(-B*K1,2));
+%     H*C -B_realized*K2 A_realized - H*C - B_realized*K1
+% ];
+% B_Lo = [
+%     zeros(size(A_realized, 1), size(H, 2));
+%     -eye(4,9);
+%     zeros(size(H))
+% ];
 C_Lo = [C zeros(size(C, 1), 4) zeros(size(C, 1), 12)];
 D_Lo = zeros(size(C_Lo, 1), size(B_Lo, 2));
 
-L_o = minreal(ss(A_Lo, B_Lo, C_Lo, D_Lo));
+L_o = minreal(ss(A_Lo, B_Lo, C_Lo, D_Lo)); % might be wrong... there is literially 0 phase margin and 1 gain margin... so literally no margin
 
 %% Plot the Bode / Sigma plot of the output effective loop gain
-sigma(L_o); grid on;
-bode(L_o); grid on;
+[s_Lo, w_Lo] = sigma(L_o); grid on;
+% bode(L_o); grid on;
 
 %% Plot the Bode / Sigma plot of the Output sensitivity function
 S_o = minreal(inv(minreal(eye(9,9) + L_o))); % output sensitivity function
-bode(S_o); grid on;
-s
+% bode(S_o); grid on;
+[s_So, w_So] = sigma(S_o); grid on;
+
 %% Plot the Bode / Sigma plot of the Output complementary sensitivity function
 T_o = minreal(L_o * S_o); % output complementary sensitivity function
-bode(T_o); grid on;
-sigma(T_o); grid on;
+% bode(T_o); grid on;
+[s_To, w_To] = sigma(T_o); grid on;
 
 %% Output Disk margin (quantification of robustness)
 [dmo, mmo] = diskmargin(L_o);
+
