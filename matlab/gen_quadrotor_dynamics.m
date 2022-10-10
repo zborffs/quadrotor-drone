@@ -222,6 +222,8 @@ size(Atilde2) % 16 x 16
 % from the results above, it's clear that the system is only controllable
 % if we add integrators just on the (p_n, p_e, p_d, yaw) state variables...
 Qtilde2 = eye(16, 16); Rtilde2 = eye(4,4);
+Qtilde2(10:12,10:12) = eye(3,3); % change cost to make go faster/slower to these dynamics
+Qtilde2(16,16) = 1; % reduce cost of bringing closing reference gap (slow down these dynamics)
 Ktilde2 = lqr(Atilde2, Btilde2, Qtilde2, Rtilde2);
 
 % 1:12 because that's the # of state vars; 13:16 b/c 13 = 12 + 1, 16 = 12
@@ -256,6 +258,8 @@ cls_poles = eig(cls);
 observer_poles = cls_poles(end-(size(H',2)-1):end); % -1 just cuz of MATLAB indexing
 system_poles = cls_poles(1:size(Ktilde2, 2));
 cls_zeros = tzero(cls);
+controllability_gramian = gram(cls, 'c');
+observability_gramian = gram(cls, 'o');
 
 %% Simulate linear closed-loop system...
 % the output vector y_pn or y_pe or y_pd or y_psi from the function call to
@@ -263,7 +267,7 @@ cls_zeros = tzero(cls);
 % state-variables... the inputs are reference signals to the pn pe pd or
 % psi variables. the final argument to the function 'lsim' are the state
 % initial conditions!
-y_pn = lsim(cls, [ones(length(T), 1) zeros(length(T), 3)], T, zeros(28,1));
+y_pn = lsim(cls, [10*ones(length(T), 1) zeros(length(T), 3)], T, zeros(28,1));
 plot(T, y_pn, 'LineWidth', 2); legend('p_n', 'p_e', 'p_d', '\phi', '\theta', '\psi', 'p', 'q', 'r'); grid on; title('Response to Step Reference for p_n'); xlabel('Time [s]');
 
 y_pe = lsim(cls, [zeros(length(T), 1) ones(length(T), 1) zeros(length(T), 2)], T, zeros(28,1));
